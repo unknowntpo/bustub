@@ -33,12 +33,24 @@ auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
 
 void LRUReplacer::Pin(frame_id_t frame_id) { LOG_INFO("Pin is called for frame_id: %d", frame_id); }
 
-void LRUReplacer::Unpin(frame_id_t frame_id) { LOG_INFO("Unpin is called for frame_id: %d", frame_id); }
-
-auto LRUReplacer::Size() -> size_t {
-  LOG_INFO("Size is called");
-  return 33;
+void LRUReplacer::Unpin(frame_id_t frame_id) {
+  LOG_INFO("hello");
+  //  // if exist -> move frame_id to front
+  // frame_id not exist, create new entry
+  if (um.find(frame_id) == um.end()) {
+    // add node to head of dl
+    dl.push_back((node){.frame_id = frame_id, .ref_cnt = 1});
+    auto end = dl.end();
+    end--;
+    um[frame_id] = end;
+  } else {
+    dl.splice();
+  }
+  // if doesn't -> add it
+  LOG_INFO("Unpin is called for frame_id: %d", frame_id);
 }
+
+auto LRUReplacer::Size() -> size_t { return dl.size(); }
 
 }  // namespace bustub
 

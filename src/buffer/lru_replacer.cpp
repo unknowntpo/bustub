@@ -21,17 +21,39 @@ LRUReplacer::LRUReplacer(size_t num_pages) { capacity = num_pages; }
 
 LRUReplacer::~LRUReplacer() = default;
 
+// Victim set frame_id with victim's frame_id.
+// RETURN VALUE: bool
+// If Victim doesn't exist, return false, else return true.
 auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
-  auto it = um.find(*frame_id);
-  if (it == um.end()) {
-    LOG_INFO("frame_id: %d", it->second->frame_id);
+  auto it = dl.begin();
+  if (it == dl.end()) {
     return false;
   }
-  dl.splice(dl.begin(), dl, um[*frame_id]);
+  // get the first node which it->ref_cnt > 0
+  size_t iter_count = 0;
+  while (it->ref_cnt > 0 && iter_count < 1000) {
+    LOG_INFO("ref_cnt: %ld", it->ref_cnt);
+    it++;
+    iter_count++;
+  }
+  LOG_INFO("iter_count: %ld", iter_count);
+
+  *frame_id = it->frame_id;
+  dl.erase(it);
+  um.erase(*frame_id);
   return true;
 }
 
-void LRUReplacer::Pin(frame_id_t frame_id) { LOG_INFO("Pin is called for frame_id: %d", frame_id); }
+void LRUReplacer::Pin(frame_id_t frame_id) {
+  LOG_INFO("Pin is called for frame_id: %d", frame_id);
+  auto pair = um.find(frame_id);
+  if (pair != um.end()) {
+    auto it = pair->second;
+    it->ref_cnt++;
+    um[frame_id] = it;
+  }
+  LOG_WARN("Pin is called with non-exist frame_id: %d", frame_id);
+}
 
 void LRUReplacer::Unpin(frame_id_t frame_id) {
   LOG_INFO("hello");
@@ -39,12 +61,12 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
   // frame_id not exist, create new entry
   if (um.find(frame_id) == um.end()) {
     // add node to head of dl
-    dl.push_back((node){.frame_id = frame_id, .ref_cnt = 1});
-    auto end = dl.end();
-    end--;
-    um[frame_id] = end;
+    dl.push_back((node){.frame_id = frame_id, .ref_cnt = 0});
+    auto new_node = dl.rbegin().base();
+    um[frame_id] = new_node;
   } else {
-    dl.splice();
+    // move target node to front
+    dl.splice(dl.begin(), dl, um[frame_id]);
   }
   // if doesn't -> add it
   LOG_INFO("Unpin is called for frame_id: %d", frame_id);

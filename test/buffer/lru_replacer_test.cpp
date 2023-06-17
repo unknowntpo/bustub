@@ -32,6 +32,8 @@ TEST(LRUReplacerTest, SampleTest) {
   lru_replacer.Unpin(1);
   EXPECT_EQ(6, lru_replacer.Size());
 
+  lru_replacer.Debug();
+
   // Scenario: get three victims from the lru.
   int value;
   lru_replacer.Victim(&value);

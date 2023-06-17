@@ -36,7 +36,6 @@ auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
     it++;
     iter_count++;
   }
-  LOG_INFO("iter_count: %ld", iter_count);
 
   *frame_id = it->frame_id;
   dl.erase(it);
@@ -45,25 +44,39 @@ auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
 }
 
 void LRUReplacer::Pin(frame_id_t frame_id) {
-  LOG_INFO("Pin is called for frame_id: %d", frame_id);
+  LRUReplacer::Debug();
   auto pair = um.find(frame_id);
   if (pair != um.end()) {
+    LOG_INFO("pair: first:  %d, second: %d", pair->first, pair->second->frame_id);
     auto it = pair->second;
     it->ref_cnt++;
     um[frame_id] = it;
+    return;
   }
   LOG_WARN("Pin is called with non-exist frame_id: %d", frame_id);
 }
 
+void LRUReplacer::Debug() {
+  for (auto it = um.begin(); it != um.end(); it++) {
+    LOG_INFO("um[%d] = {frame_id: %d, ref_cnt: %ld}", it->first, it->second->frame_id, it->second->ref_cnt);
+  }
+
+  for (const auto &n : dl) {
+    LOG_INFO("n: {frame_id: %d, ref_cnt: %ld}", n.frame_id, n.ref_cnt);
+  }
+}
+
 void LRUReplacer::Unpin(frame_id_t frame_id) {
-  LOG_INFO("hello");
   //  // if exist -> move frame_id to front
   // frame_id not exist, create new entry
   if (um.find(frame_id) == um.end()) {
     // add node to head of dl
-    dl.push_back((node){.frame_id = frame_id, .ref_cnt = 0});
-    auto new_node = dl.rbegin().base();
-    um[frame_id] = new_node;
+    node new_node;
+    new_node.frame_id = frame_id;
+    new_node.ref_cnt = 0;
+    dl.push_back(new_node);
+    LOG_INFO("new_node: frame_id: %d, ref_cnt: %ld", new_node.frame_id, new_node.ref_cnt);
+    um[frame_id] = dl.rbegin().base();
   } else {
     // move target node to front
     dl.splice(dl.begin(), dl, um[frame_id]);

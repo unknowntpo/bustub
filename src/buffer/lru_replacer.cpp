@@ -31,7 +31,7 @@ auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
   }
   // get the first node which it->ref_cnt > 0
   size_t iter_count = 0;
-  while (it->ref_cnt > 0 && iter_count < 1000) {
+  while (it->ref_cnt > 0 && iter_count < 10) {
     LOG_INFO("ref_cnt: %ld", it->ref_cnt);
     it++;
     iter_count++;
@@ -76,7 +76,7 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
     new_node.ref_cnt = 0;
     dl.push_back(new_node);
     LOG_INFO("new_node: frame_id: %d, ref_cnt: %ld", new_node.frame_id, new_node.ref_cnt);
-    um[frame_id] = dl.rbegin().base();
+    um[frame_id] = std::prev(dl.end());
   } else {
     // move target node to front
     dl.splice(dl.begin(), dl, um[frame_id]);

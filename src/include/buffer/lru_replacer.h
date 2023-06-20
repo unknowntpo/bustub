@@ -43,19 +43,35 @@ class LRUReplacer : public Replacer {
    */
   ~LRUReplacer() override;
 
+  /**
+   * Remove the victim frame as defined by the replacement policy.
+   * @param[out] frame_id id of frame that was removed, nullptr if no victim was found
+   * @return true if a victim frame was found, false otherwise
+   */
   auto Victim(frame_id_t *frame_id) -> bool override;
 
+  /**
+   * Pins a frame, indicating that it should not be victimized until it is unpinned.
+   * @param frame_id the id of the frame to pin
+   */
   void Pin(frame_id_t frame_id) override;
 
+  /**
+   * Unpins a frame, indicating that it can now be victimized.
+   * @param frame_id the id of the frame to unpin
+   */
   void Unpin(frame_id_t frame_id) override;
 
   void Debug();
 
+  /** @return the number of elements in the replacer that can be victimized */
   auto Size() -> size_t override;
 
  private:
   // TODO(student): implement me!
   size_t capacity;
+  // num of node that is evictable.
+  size_t victim_size;
   std::list<node> dl;
   std::unordered_map<frame_id_t, std::list<node>::iterator> um;
 };

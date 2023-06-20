@@ -32,7 +32,7 @@ TEST(LRUReplacerTest, SampleTest) {
   lru_replacer.Unpin(1);
   EXPECT_EQ(6, lru_replacer.Size());
 
-  lru_replacer.Debug();
+  // expect [1, 2, 3, 4, 5, 6]
 
   // Scenario: get three victims from the lru.
   int value;
@@ -42,6 +42,9 @@ TEST(LRUReplacerTest, SampleTest) {
   EXPECT_EQ(2, value);
   lru_replacer.Victim(&value);
   EXPECT_EQ(3, value);
+
+  // expect [4, 5, 6]
+  lru_replacer.Debug();
 
   // Scenario: pin elements in the replacer.
   // Note that 3 has already been victimized, so pinning 3 should have no effect.

@@ -19,7 +19,8 @@
 namespace bustub {
 LRUReplacer::LRUReplacer(size_t num_pages) {
   capacity = num_pages;
-  victim_size = 0;
+  pinned_list = {};
+  unpinned_list = {};
 }
 
 LRUReplacer::~LRUReplacer() = default;
@@ -28,121 +29,68 @@ LRUReplacer::~LRUReplacer() = default;
 // RETURN VALUE: bool
 // If Victim doesn't exist, return false, else return true.
 auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
-  auto it = dl.begin();
-  if (it == dl.end()) {
-    return false;
-  }
-  // get the first node which it->ref_cnt > 0
-  while (it->ref_cnt > 0) {
-    LOG_INFO("ref_cnt: %ld", it->ref_cnt);
-    it++;
-  }
-
-  *frame_id = it->frame_id;
-  dl.erase(it);
-  um.erase(*frame_id);
-
-  // this frame_id is evictable, so after deleting it, we can
-  // safely decrease the victim_size.
-  victim_size--;
-
+  if (unpinned_list.size() == 0) return false;
+  *frame_id = unpinned_list.back().frame_id;
+  unpinned_list.pop_back();
+  entries.erase(*frame_id);
   return true;
 }
 
 void LRUReplacer::Pin(frame_id_t frame_id) {
-  LRUReplacer::Debug();
-  auto pair = um.find(frame_id);
-  if (pair != um.end()) {
-    LOG_INFO("pair: first:  %d, second: %d", pair->first, pair->second->frame_id);
-    auto it = pair->second;
-
-    bool pinned = (it->ref_cnt > 0);
-    if (pinned) {
-      victim_size--;
-    }
-
-    it->ref_cnt++;
-
-    um[frame_id] = it;
+  // if doesn't exist
+  auto en_it = entries.find(frame_id);
+  if (en_it == entries.end()) {
     return;
   }
-  LOG_WARN("Pin is called with non-exist frame_id: %d", frame_id);
+  entry en = en_it->second;
+  if (en.pinned) {
+    // ref_cnt++
+    en.it->ref_cnt++;
+  } else {
+    // move from unpinned_list to pinned_list
+
+    pinned_list.splice(pinned_list.begin(), unpinned_list, en.it, ++(en.it));
+    en.it = pinned_list.begin();
+    en.it->ref_cnt++;
+    en.pinned = true;
+  }
 }
 
 void LRUReplacer::Debug() {
-  LOG_INFO("capacity=[%ld], victim_size=[%ld]", capacity, victim_size);
-  for (auto it = um.begin(); it != um.end(); it++) {
-    LOG_INFO("um[%d] = {frame_id: %d, ref_cnt: %ld}", it->first, it->second->frame_id, it->second->ref_cnt);
+  LOG_INFO("capacity=[%ld], size=[%ld]", capacity, this->Size());
+
+  for (auto it = entries.begin(); it != entries.end(); it++) {
+    LOG_INFO("entries[%d] = {pinned: %d, ref_cnt: %ld}", it->first, it->second.pinned, it->second.it->ref_cnt);
   }
 
-  for (const auto &n : dl) {
-    LOG_INFO("n: {frame_id: %d, ref_cnt: %ld}", n.frame_id, n.ref_cnt);
+  for (const auto &n : unpinned_list) {
+    LOG_INFO("unpinned_list node: {frame_id: %d, ref_cnt: %ld}", n.frame_id, n.ref_cnt);
+  }
+
+  for (const auto &n : pinned_list) {
+    LOG_INFO("pinned_list node: {frame_id: %d, ref_cnt: %ld}", n.frame_id, n.ref_cnt);
   }
 }
 
 void LRUReplacer::Unpin(frame_id_t frame_id) {
-  size_t ref_cnt = 0;
-  // frame_id not exist, create new entry
-  //
-  //
-  if (um.find(frame_id) == um.end()) {
-    // add node to head of dl
-    node new_node;
-    new_node.frame_id = frame_id;
-    new_node.ref_cnt = ref_cnt;
-    dl.push_back(new_node);
-    LOG_INFO("new_node: frame_id: %d, ref_cnt: %ld", new_node.frame_id, new_node.ref_cnt);
-    um[frame_id] = std::prev(dl.end());
+  // lookup frame_id in entries
+  auto pair = entries.find(frame_id);
+  if (pair != entries.end()) {
+    entry en = pair->second;
+    auto old_node = *en.it;
+    en.it->ref_cnt--;
+    if (old_node.ref_cnt == 0) {
+      unpinned_list.push_front(old_node);
+      en.it = unpinned_list.begin();
+      entries[frame_id] = en;
+    }
   } else {
-    // move target node to front
-    ref_cnt = um[frame_id]->ref_cnt;
-    ref_cnt--;
-    um[frame_id]->ref_cnt = ref_cnt;
+    node new_node = {.frame_id = frame_id, .ref_cnt = 0};
+    unpinned_list.push_front(new_node);
+    entries[frame_id] = {.frame_id = frame_id, .pinned = false, .it = unpinned_list.begin()};
   }
-
-  // deal with LRUReplacer.victim_size
-  if (ref_cnt == 0) {
-    // this frame_id can be evicted.
-    victim_size++;
-  };
-
-  // if doesn't -> add it
-  LOG_INFO("Unpin is called for frame_id: %d", frame_id);
 }
 
-auto LRUReplacer::Size() -> size_t { return victim_size; }
+auto LRUReplacer::Size() -> size_t { return unpinned_list.size() + pinned_list.size(); }
 
 }  // namespace bustub
-
-/*
-
-class LRUCache {
- private:
-  int capacity;
-  list<pair<int, int>> dl;
-  unordered_map<int, list<pair<int, int>>::iterator> um;
-
- public:
-  LRUCache(int capacity) { this->capacity = capacity; }
-
-  int get(int key) {
-    if (um.find(key) == um.end()) {
-      return -1;
-    }
-    dl.splice(dl.begin(), dl, um[key]);
-    return um[key]->second;
-  }
-
-  void put(int key, int value) {
-    if (um.find(key) != um.end()) {
-      dl.erase(um[key]);
-    } else if (dl.size() == capacity) {
-      int delKey = dl.back().first;
-      dl.pop_back();
-      um.erase(delKey);
-    }
-    dl.push_front({key, value});
-    um[key] = dl.begin();
-  }
-};
-*/

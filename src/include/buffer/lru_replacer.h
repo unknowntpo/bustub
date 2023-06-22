@@ -27,6 +27,12 @@ struct node {
   size_t ref_cnt;
 };
 
+struct entry {
+  frame_id_t frame_id;
+  bool pinned;
+  std::list<node>::iterator it;
+};
+
 /**
  * LRUReplacer implements the Least Recently Used replacement policy.
  */
@@ -70,9 +76,9 @@ class LRUReplacer : public Replacer {
  private:
   // TODO(student): implement me!
   size_t capacity;
-  // num of node that is evictable.
-  size_t victim_size;
-  std::list<node> dl;
-  std::unordered_map<frame_id_t, std::list<node>::iterator> um;
+  // push from head, pop from back
+  std::list<node> unpinned_list;
+  std::list<node> pinned_list;
+  std::unordered_map<frame_id_t, entry> entries;
 };
 }  // namespace bustub

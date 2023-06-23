@@ -19,8 +19,8 @@
 namespace bustub {
 LRUReplacer::LRUReplacer(size_t num_pages) {
   capacity = num_pages;
-  pinned_list = {};
-  unpinned_list = {};
+  // pinned_list = {};
+  // unpinned_list = {};
 }
 
 LRUReplacer::~LRUReplacer() = default;
@@ -29,10 +29,11 @@ LRUReplacer::~LRUReplacer() = default;
 // RETURN VALUE: bool
 // If Victim doesn't exist, return false, else return true.
 auto LRUReplacer::Victim(frame_id_t *frame_id) -> bool {
-  if (unpinned_list.size() == 0) return false;
+  if (unpinned_list.empty()) return false;
   *frame_id = unpinned_list.back().frame_id;
   unpinned_list.pop_back();
   entries.erase(*frame_id);
+  LOG_INFO("Evicted frame_id: %d", *frame_id);
   return true;
 }
 
@@ -50,9 +51,12 @@ void LRUReplacer::Pin(frame_id_t frame_id) {
     // move from unpinned_list to pinned_list
 
     pinned_list.splice(pinned_list.begin(), unpinned_list, en.it, ++(en.it));
+    LOG_INFO("after splice");
+    this->Debug();
     en.it = pinned_list.begin();
     en.it->ref_cnt++;
     en.pinned = true;
+    entries[frame_id] = en;
   }
 }
 
@@ -77,10 +81,16 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
   auto pair = entries.find(frame_id);
   if (pair != entries.end()) {
     entry en = pair->second;
+    if (!en.pinned) {
+      return;
+    }
+    if (en.it->ref_cnt > 0) {
+      en.it->ref_cnt--;
+    }
     auto old_node = *en.it;
-    en.it->ref_cnt--;
     if (old_node.ref_cnt == 0) {
       unpinned_list.push_front(old_node);
+      pinned_list.erase(en.it);
       en.it = unpinned_list.begin();
       entries[frame_id] = en;
     }
@@ -91,6 +101,6 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
   }
 }
 
-auto LRUReplacer::Size() -> size_t { return unpinned_list.size() + pinned_list.size(); }
+auto LRUReplacer::Size() -> size_t { return unpinned_list.size(); }
 
 }  // namespace bustub

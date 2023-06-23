@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "buffer/lru_replacer.h"
+#include "common/logger.h"
+
 #include "gtest/gtest.h"
 
 namespace bustub {
@@ -33,6 +35,9 @@ TEST(LRUReplacerTest, SampleTest) {
   EXPECT_EQ(6, lru_replacer.Size());
 
   // expect [1, 2, 3, 4, 5, 6]
+  //
+  LOG_INFO("after Unpin 1,2,3,4,5,6,1");
+  lru_replacer.Debug();
 
   // Scenario: get three victims from the lru.
   int value;
@@ -43,7 +48,8 @@ TEST(LRUReplacerTest, SampleTest) {
   lru_replacer.Victim(&value);
   EXPECT_EQ(3, value);
 
-  // expect [4, 5, 6]
+  LOG_INFO("after victim 1,2,3");
+  // expect unpinned list: [4, 5, 6], pinned_list: []
   lru_replacer.Debug();
 
   // Scenario: pin elements in the replacer.
@@ -51,6 +57,9 @@ TEST(LRUReplacerTest, SampleTest) {
   lru_replacer.Pin(3);
   lru_replacer.Pin(4);
   EXPECT_EQ(2, lru_replacer.Size());
+
+  LOG_INFO("after Pin 3,4");
+  lru_replacer.Debug();
 
   // Scenario: unpin 4. We expect that the reference bit of 4 will be set to 1.
   lru_replacer.Unpin(4);

@@ -12,6 +12,7 @@
 
 #include "buffer/lru_k_replacer.h"
 #include <sys/fcntl.h>
+#include "common/config.h"
 #include "common/exception.h"
 #include "common/logger.h"
 
@@ -37,22 +38,19 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     };
     this->hist_list_.push_front(list_node);
     MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 0);
-    //    MapNode new_node = new MapNode(frame_id);
     this->node_store_.emplace(frame_id, new_node);
-    // v$k
     return;
   }
-  /*
-  if (frame_id_over_k(it->second)) {
-    add_k_by_one(frame_id, this->node_store_);
-    move_frame_id_to_hist_list();
-  } else {
-    add_k_by_one(frame_id, this->node_store_);
-  }
-  */
-}
 
-bool LRUKReplacer::FrameIDOverK(MapNode node) { return node.k_ >= this->k_; }
+  if (it->second.ExceedK(this->k_)) {
+    it->second.k_++;
+    // move to cache_list
+    auto l_it = it->second.it_;
+    this->cache_list_.splice(cache_list_.begin(), this->hist_list_, l_it, (++l_it));
+  } else {
+    it->second.k_++;
+  }
+}
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
   LOG_INFO("SetEvictable frame_id: %d", frame_id);
@@ -76,6 +74,8 @@ MapNode::MapNode(size_t frame_id, std::list<ListNode>::iterator it, bool is_evic
   is_evictable_ = is_evictable;
   k_ = k;
 }
+
+bool MapNode::ExceedK(size_t k) { return k >= this->k_; }
 
 // MapNode::MapNode(size_t frame_id) : fid_(frame_id) {}
 

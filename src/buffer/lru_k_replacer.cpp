@@ -12,6 +12,7 @@
 
 #include "buffer/lru_k_replacer.h"
 #include <sys/fcntl.h>
+#include <set>
 #include "common/config.h"
 #include "common/exception.h"
 #include "common/logger.h"
@@ -54,6 +55,12 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
   LOG_INFO("SetEvictable frame_id: %d", frame_id);
+  auto it = this->node_store_.find(frame_id);
+  if (it == this->node_store_.end()) {
+    LOG_ERROR("in SetEvictable, frame_id: %d does not exist", frame_id);
+    return;
+  }
+  it->second.is_evictable_ = set_evictable;
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) { LOG_INFO("Remove frame_id: %d", frame_id); }

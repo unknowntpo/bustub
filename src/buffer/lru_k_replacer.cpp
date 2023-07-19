@@ -26,6 +26,16 @@ LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_fra
 // look for frame_id from map, and delete it from hist_list or cache_list,
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
   LOG_INFO("Evicted frame_id: %d", *frame_id);
+
+  /*
+  // search hist_list, if exist victim, then evict it
+  for (auto it = this->hist_list_.begin(); it != this->hist_list_.end(); it++) {
+    if (it->map_node_ptr_->is_evictable_) {
+      // trim
+    }
+  }
+  */
+  // if hist_list has not victim, search hist_list
   return false;
 }
 
@@ -39,6 +49,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     };
     this->hist_list_.push_front(list_node);
     MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 0);
+    this->hist_list_.begin()->map_node_ptr_ = &new_node;
     this->node_store_.emplace(frame_id, new_node);
     return;
   }
@@ -47,7 +58,8 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     it->second.k_++;
     // move to cache_list
     auto l_it = it->second.it_;
-    this->cache_list_.splice(cache_list_.begin(), this->hist_list_, l_it, (++l_it));
+    this->cache_list_.splice(this->cache_list_.begin(), this->hist_list_, l_it, (++l_it));
+    it->second.it_ = this->cache_list_.begin();
   } else {
     it->second.k_++;
   }
@@ -60,6 +72,16 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
     LOG_ERROR("in SetEvictable, frame_id: %d does not exist", frame_id);
     return;
   }
+  if (it->second.is_evictable_ == set_evictable) {
+    // no change
+    return;
+  }
+  if (it->second.is_evictable_ && !set_evictable) {
+    this->curr_size_--;
+  }
+  if (!it->second.is_evictable_ && set_evictable) {
+    this->curr_size_++;
+  }
   it->second.is_evictable_ = set_evictable;
 }
 
@@ -67,7 +89,7 @@ void LRUKReplacer::Remove(frame_id_t frame_id) { LOG_INFO("Remove frame_id: %d",
 
 auto LRUKReplacer::Size() -> size_t {
   LOG_INFO("size is called");
-  return 0;
+  return this->curr_size_;
 }
 
 /*

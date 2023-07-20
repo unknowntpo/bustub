@@ -21,34 +21,50 @@ namespace bustub {
 
 LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_frames), k_(k) {}
 
+void LRUKReplacer::Debug() {
+  LOG_INFO("capacity=[%ld], size=[%ld]", this->replacer_size_, this->Size());
+
+  for (auto it = this->node_store_.begin(); it != this->node_store_.end(); it++) {
+    LOG_INFO("node_store_[%d] = {k_: %ld, is_evictable: %d}", it->first, it->second.k_, it->second.is_evictable_);
+  }
+
+  for (const auto &n : this->hist_list_) {
+    LOG_INFO("hist_list node: {fid_: %d}", n.fid_);
+  }
+
+  for (const auto &n : this->cache_list_) {
+    LOG_INFO("cache_list node: {fid_: %d}", n.fid_);
+  }
+}
+
 // if frame_id doesn't exist, return false
 // if frame_id is not evictable, return false
 // look for frame_id from map, and delete it from hist_list or cache_list,
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
   // search hist_list, if exist victim, then evict it
   for (auto rit = this->hist_list_.rbegin(); rit != this->hist_list_.rend(); rit++) {
-    auto it = rit.base()--;
+    auto it = --rit.base();
     ListNode n;
     auto map_node_it = it->map_node_it_;
     if (it->map_node_it_->second.is_evictable_) {
+      *frame_id = it->fid_;
       this->hist_list_.erase(it);
       this->node_store_.erase(map_node_it);
       this->curr_size_--;
-      *frame_id = it->fid_;
       return true;
     }
   }
 
   // if hist_list has no victim, then get victim from cache_list
   for (auto rit = this->cache_list_.rbegin(); rit != this->cache_list_.rend(); rit++) {
-    auto it = rit.base()--;
+    auto it = --rit.base();
     ListNode n;
     auto map_node_it = it->map_node_it_;
     if (it->map_node_it_->second.is_evictable_) {
+      *frame_id = it->fid_;
       this->cache_list_.erase(it);
       this->node_store_.erase(map_node_it);
       this->curr_size_--;
-      *frame_id = it->fid_;
       return true;
     }
   }
@@ -66,20 +82,45 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
         .fid_ = frame_id,
     };
     this->hist_list_.push_front(list_node);
-    MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 0);
+    MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 1);
     this->node_store_.emplace(frame_id, new_node);
     this->hist_list_.begin()->map_node_it_ = this->node_store_.find(frame_id);
     return;
   }
 
-  if (it->second.ExceedK(this->k_)) {
+  // if not exceed k: move it to head of hist list, and incr k
+  // if k-1 -> k: move it to cache list, and incr k
+  //(o) if k -> inf: move it to head of cache list, and incr k
+  //
+  //
+  //
+
+  LOG_INFO("before check, frame_id: %d, k: %ld, it->second.K(): %ld, exceed k: %d", frame_id, it->second.k_,
+           it->second.K(), it->second.ExceedK(this->k_));
+  if (it->second.K() == this->k_ - 1) {
+    // FIXME: Why this check not true for frame_id = 1
+    // if ((!it->second.ExceedK(this->k_)) && it->second.K() == this->k_ - 1) {
+    LOG_INFO("need to move from hist list to cache list frame_id: %d", frame_id);
     it->second.k_++;
-    // move to cache_list
+    LOG_INFO("frame_id: %d mapnode.k is %ld", frame_id, it->second.k_);
     auto l_it = it->second.it_;
+    // move from hist list to cache list
     this->cache_list_.splice(this->cache_list_.begin(), this->hist_list_, l_it, (++l_it));
+    it->second.it_ = this->cache_list_.begin();
+    return;
+  }
+  if (it->second.ExceedK(this->k_)) {
+    LOG_INFO("need to move from cache list to head of cache list frame_id: %d", frame_id);
+    it->second.k_++;
+    auto l_it = it->second.it_;
+    // move to head of cache_list
+    this->cache_list_.splice(this->cache_list_.begin(), this->cache_list_, l_it, (++l_it));
     it->second.it_ = this->cache_list_.begin();
   } else {
     it->second.k_++;
+    auto l_it = it->second.it_;
+    this->hist_list_.splice(this->hist_list_.begin(), this->hist_list_, l_it, (++l_it));
+    return;
   }
 }
 
@@ -122,7 +163,8 @@ MapNode::MapNode(size_t frame_id, std::list<ListNode>::iterator it, bool is_evic
   k_ = k;
 }
 
-bool MapNode::ExceedK(size_t k) { return k >= this->k_; }
+bool MapNode::ExceedK(size_t k) { return this->k_ >= k; }
+size_t MapNode::K() { return this->k_; }
 
 // MapNode::MapNode(size_t frame_id) : fid_(frame_id) {}
 

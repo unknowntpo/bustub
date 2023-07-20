@@ -39,6 +39,7 @@ class MapNode {
   // explicit MapNode(size_t frame_id);
   explicit MapNode(size_t frame_id, std::list<ListNode>::iterator it, bool is_evictable, size_t k);
   auto ExceedK(size_t k) -> bool;
+  auto K() -> size_t;
 
   ~MapNode() = default;
 };
@@ -158,6 +159,7 @@ class LRUKReplacer {
    * @return size_t
    */
   auto Size() -> size_t;
+  auto Debug() -> void;
 
  private:
   // TODO(student): implement me! You can replace these member variables as you like.

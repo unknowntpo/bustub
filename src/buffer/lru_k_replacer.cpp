@@ -25,17 +25,35 @@ LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_fra
 // if frame_id is not evictable, return false
 // look for frame_id from map, and delete it from hist_list or cache_list,
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
-  LOG_INFO("Evicted frame_id: %d", *frame_id);
-
-  /*
   // search hist_list, if exist victim, then evict it
-  for (auto it = this->hist_list_.begin(); it != this->hist_list_.end(); it++) {
-    if (it->map_node_ptr_->is_evictable_) {
-      // trim
+  for (auto rit = this->hist_list_.rbegin(); rit != this->hist_list_.rend(); rit++) {
+    auto it = rit.base()--;
+    ListNode n;
+    auto map_node_it = it->map_node_it_;
+    if (it->map_node_it_->second.is_evictable_) {
+      this->hist_list_.erase(it);
+      this->node_store_.erase(map_node_it);
+      this->curr_size_--;
+      *frame_id = it->fid_;
+      return true;
     }
   }
-  */
-  // if hist_list has not victim, search hist_list
+
+  // if hist_list has no victim, then get victim from cache_list
+  for (auto rit = this->cache_list_.rbegin(); rit != this->cache_list_.rend(); rit++) {
+    auto it = rit.base()--;
+    ListNode n;
+    auto map_node_it = it->map_node_it_;
+    if (it->map_node_it_->second.is_evictable_) {
+      this->cache_list_.erase(it);
+      this->node_store_.erase(map_node_it);
+      this->curr_size_--;
+      *frame_id = it->fid_;
+      return true;
+    }
+  }
+
+  // victim not found
   return false;
 }
 
@@ -49,8 +67,8 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     };
     this->hist_list_.push_front(list_node);
     MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 0);
-    this->hist_list_.begin()->map_node_ptr_ = &new_node;
     this->node_store_.emplace(frame_id, new_node);
+    this->hist_list_.begin()->map_node_it_ = this->node_store_.find(frame_id);
     return;
   }
 

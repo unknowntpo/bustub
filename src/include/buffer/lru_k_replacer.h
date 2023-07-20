@@ -16,6 +16,7 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "common/config.h"
@@ -44,7 +45,7 @@ class MapNode {
 
 struct ListNode {
   frame_id_t fid_;
-  MapNode *map_node_ptr_;
+  std::unordered_map<frame_id_t, MapNode>::iterator map_node_it_;
 };
 
 /**

@@ -32,8 +32,12 @@ void LRUKReplacer::Debug() {
     LOG_INFO("hist_list node: {fid_: %d}", n.fid_);
   }
 
-  for (const auto &n : this->cache_list_) {
-    LOG_INFO("cache_list node: {fid_: %d}", n.fid_);
+  LOG_INFO("size hist_list node: %ld", this->hist_list_.size());
+
+  LOG_INFO("size cache list : %ld", this->cache_list_.size());
+
+  for (auto it = this->cache_list_.begin(); it != this->cache_list_.end(); it++) {
+    LOG_INFO("cache_list node: {fid_: %d}", it->fid_);
   }
 }
 
@@ -105,7 +109,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     LOG_INFO("frame_id: %d mapnode.k is %ld", frame_id, it->second.k_);
     auto l_it = it->second.it_;
     // move from hist list to cache list
-    this->cache_list_.splice(this->cache_list_.begin(), this->hist_list_, l_it, (++l_it));
+    this->cache_list_.splice(this->cache_list_.begin(), this->hist_list_, l_it, std::next(l_it));
     it->second.it_ = this->cache_list_.begin();
     return;
   }
@@ -114,12 +118,17 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     it->second.k_++;
     auto l_it = it->second.it_;
     // move to head of cache_list
-    this->cache_list_.splice(this->cache_list_.begin(), this->cache_list_, l_it, (++l_it));
+    auto node = *l_it;
+    this->cache_list_.erase(l_it);
+    this->cache_list_.push_front(node);
     it->second.it_ = this->cache_list_.begin();
   } else {
     it->second.k_++;
     auto l_it = it->second.it_;
-    this->hist_list_.splice(this->hist_list_.begin(), this->hist_list_, l_it, (++l_it));
+    auto node = *l_it;
+    this->hist_list_.erase(l_it);
+    this->hist_list_.push_front(node);
+    it->second.it_ = this->hist_list_.begin();
     return;
   }
 }

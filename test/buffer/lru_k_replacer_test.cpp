@@ -97,11 +97,10 @@ TEST(LRUKReplacerTest, SampleTest) {
 
   lru_replacer.Debug();
   lru_replacer.RecordAccess(1);
-  lru_replacer.Debug();
   // lru_replacer.Debug();
   lru_replacer.SetEvictable(1, true);
   ASSERT_EQ(2, lru_replacer.Size());
-  // lru_replacer.Debug();
+  lru_replacer.Debug();
   ASSERT_EQ(true, lru_replacer.Evict(&value));
   ASSERT_EQ(value, 4);
 

@@ -13,6 +13,7 @@
 #include "buffer/buffer_pool_manager.h"
 
 #include "common/exception.h"
+#include "common/logger.h"
 #include "common/macros.h"
 #include "storage/page/page_guard.h"
 
@@ -39,16 +40,57 @@ BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager
 
 BufferPoolManager::~BufferPoolManager() { delete[] pages_; }
 
+/**
+ * TODO(P1): Add implementation
+ *
+ * @brief Create a new page in the buffer pool. Set page_id to the new page's id, or nullptr if all frames
+ * are currently in use and not evictable (in another word, pinned).
+ *
+ * You should pick the replacement frame from either the free list or the replacer (always find from the free list
+ * first), and then call the AllocatePage() method to get a new page id. If the replacement frame has a dirty page,
+ * you should write it back to the disk first. You also need to reset the memory and metadata for the new page.
+ *
+ * Remember to "Pin" the frame by calling replacer.SetEvictable(frame_id, false)
+ * so that the replacer wouldn't evict the frame before the buffer pool manager "Unpin"s it.
+ * Also, remember to record the access history of the frame in the replacer for the lru-k algorithm to work.
+ *
+ * @param[out] page_id id of created page
+ * @return nullptr if no new pages could be created, otherwise pointer to new page
+ */
 auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
+  LOG_INFO("NewPage is called");
   const std::lock_guard<std::mutex> lock(latch_);
 
-  frame_id_t frame_id = *free_list_.begin();
-  free_list_.pop_front();
+  frame_id_t frame_id;
+  if (free_list_.begin() != free_list_.end()) {
+    frame_id = *free_list_.begin();
+    free_list_.pop_front();
+  } else {
+    // pick from the replacer
+    bool ok = replacer_->Evict(&frame_id);
+    if (!ok) {
+      LOG_INFO("no page can be created since replacer is full");
+      return nullptr;
+    }
+    Page *page = &pages_[frame_id];
+    if (page->IsDirty()) {
+      if (!this->FlushPage(page->GetPageId())) {
+        LOG_ERROR("failed to flush the dirty page");
+        // FIXME: should I add back page_id to replacer ?
+        replacer_->RecordAccess(frame_id);
+        return nullptr;
+      }
+    }
+  }
+
   Page *page = new Page();
+  *page_id = this->AllocatePage();
   page->page_id_ = *page_id;
-  page_table_.emplace(page_id, frame_id);
+  page_table_.emplace(*page_id, frame_id);
   replacer_->RecordAccess(frame_id);
-  replacer_->SetEvictable(frame_id, true);
+  replacer_->SetEvictable(frame_id, false);
+
+  return page;
 }
 
 // TODO: impl

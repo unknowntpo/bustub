@@ -62,35 +62,21 @@ auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
   const std::lock_guard<std::mutex> lock(latch_);
 
   Page *page;
-  frame_id_t frame_id;
-  if (free_list_.begin() != free_list_.end()) {
-    frame_id = *free_list_.begin();
-    free_list_.pop_front();
-    page = &pages_[frame_id];
-  } else {
-    // pick from the replacer
-    bool ok = replacer_->Evict(&frame_id);
-    if (!ok) {
-      LOG_INFO("no page can be created since replacer is full");
-      return nullptr;
-    }
-    page = &pages_[frame_id];
-    if (page->IsDirty()) {
-      if (!this->FlushPage(page->GetPageId())) {
-        LOG_ERROR("failed to flush the dirty page");
-        // FIXME: should I add back page_id to replacer ?
-        replacer_->RecordAccess(frame_id);
-        return nullptr;
-      }
-    }
+  *page_id = this->AllocatePage();
+
+  frame_id_t frame_id = this->AllocateFrameForPage(*page_id);
+  if (frame_id == INVALID_FRAME_ID) {
+    return nullptr;
   }
 
-  *page_id = this->AllocatePage();
+  LOG_INFO("Allocated frame_id %d", frame_id);
+
+  page = &pages_[frame_id];
   page->page_id_ = *page_id;
   page->pin_count_++;
   page_table_.emplace(*page_id, frame_id);
-  replacer_->RecordAccess(frame_id);
-  replacer_->SetEvictable(frame_id, false);
+
+  assert(page != NULL);
 
   return page;
 }
@@ -113,15 +99,32 @@ auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
  * @return nullptr if page_id cannot be fetched, otherwise pointer to the requested page
  */
 auto BufferPoolManager::FetchPage(page_id_t page_id, [[maybe_unused]] AccessType access_type) -> Page * {
+  LOG_INFO("FetchPage is called for page %d", page_id);
+
   const std::lock_guard<std::mutex> lock(latch_);
+
+  frame_id_t frame_id;
+  Page *page;
 
   auto it = page_table_.find(page_id);
   if (it == page_table_.end()) {
-    // not found
-    return nullptr;
+    frame_id = this->AllocateFrameForPage(page_id);
+    if (frame_id == INVALID_FRAME_ID) {
+      return nullptr;
+    }
+    page = &pages_[frame_id];
+    page->page_id_ = page_id;
+    disk_manager_->ReadPage(page->GetPageId(), page->GetData());
+  } else {
+    frame_id = it->second;
+    page = &pages_[frame_id];
+    replacer_->RecordAccess(frame_id);
+    replacer_->SetEvictable(frame_id, false);
   }
-  frame_id_t id = it->second;
-  return &pages_[id];
+
+  page->pin_count_++;
+
+  return page;
 }
 
 /**
@@ -139,29 +142,43 @@ auto BufferPoolManager::FetchPage(page_id_t page_id, [[maybe_unused]] AccessType
  * @return false if the page is not in the page table or its pin count is <= 0 before this call, true otherwise
  */
 auto BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty, [[maybe_unused]] AccessType access_type) -> bool {
-  std::cout << "UnpinPage is called" << std::endl;
+  LOG_INFO("UnpinPage is called for page %d", page_id);
   const std::lock_guard<std::mutex> lock(latch_);
 
   // return false;
   auto it = page_table_.find(page_id);
   if (it == page_table_.end()) {
     // not found
+    LOG_INFO("page %d not found", page_id);
     return false;
   }
   // found target page, now unpin it.
-  frame_id_t id = it->second;
-  Page *page = &pages_[id];
+  frame_id_t frame_id = it->second;
+  Page *page = &pages_[frame_id];
+  LOG_INFO("pin_count_: %d", page->GetPinCount());
+
   if (page->pin_count_ <= 0) return false;
   page->pin_count_--;
   if (page->pin_count_ == 0) {
-    replacer_->SetEvictable(id, true);
+    replacer_->SetEvictable(frame_id, true);
   }
+  page->is_dirty_ = is_dirty;
   return true;
 }
 
-// TODO: impl
+/**
+ * TODO(P1): Add implementation
+ *
+ * @brief Flush the target page to disk.
+ *
+ * Use the DiskManager::WritePage() method to flush a page to disk, REGARDLESS of the dirty flag.
+ * Unset the dirty flag of the page after flushing.
+ *
+ * @param page_id id of page to be flushed, cannot be INVALID_PAGE_ID
+ * @return false if the page could not be found in the page table, true otherwise
+ */
 auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
-  std::cout << "FlushPage is called" << std::endl;
+  std::cout << "FlushPage is called for page_id " << page_id << std::endl;
   const std::lock_guard<std::mutex> lock(latch_);
 
   if (page_id == INVALID_PAGE_ID) return false;
@@ -175,13 +192,9 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
   if (page->pin_count_ > 0) return false;
 
   // Now, page can be flushed.
-  page_table_.erase(page_id);
+  disk_manager_->WritePage(page_id, page->GetData());
+  page->is_dirty_ = false;
 
-  // destruct page, re-construct new blank page.
-  pages_[frame_id].~Page();
-  new (&pages_[frame_id]) Page();
-
-  free_list_.push_back(frame_id);
   return true;
 }
 
@@ -200,5 +213,64 @@ auto BufferPoolManager::FetchPageRead(page_id_t page_id) -> ReadPageGuard { retu
 auto BufferPoolManager::FetchPageWrite(page_id_t page_id) -> WritePageGuard { return {this, nullptr}; }
 
 auto BufferPoolManager::NewPageGuarded(page_id_t *page_id) -> BasicPageGuard { return {this, nullptr}; }
+
+// Page *page;
+// frame_id_t frame_id;
+// if (free_list_.begin() != free_list_.end()) {
+//   frame_id = *free_list_.begin();
+//   free_list_.pop_front();
+//   page = &pages_[frame_id];
+// } else {
+//   // pick from the replacer
+//   bool ok = replacer_->Evict(&frame_id);
+//   if (!ok) {
+//     LOG_INFO("no page can be created since replacer is full");
+//     return nullptr;
+//   }
+//   page = &pages_[frame_id];
+//   if (page->IsDirty()) {
+//     if (!this->FlushPage(page->GetPageId())) {
+//       LOG_ERROR("failed to flush the dirty page");
+//       // FIXME: should I add back page_id to replacer ?
+//       replacer_->RecordAccess(frame_id);
+//       return nullptr;
+//     }
+//   }
+// }
+
+// AllocateFrame
+auto BufferPoolManager::AllocateFrameForPage(page_id_t page_id) -> frame_id_t {
+  frame_id_t frame_id = INVALID_FRAME_ID;
+  // pick from free_list
+  auto it = free_list_.begin();
+  if (it == free_list_.end()) {
+    // pick from replacer
+    if (!replacer_->Evict(&frame_id)) {
+      LOG_ERROR("failed to evict a frame");
+      return INVALID_FRAME_ID;
+    } else {
+      // if frame_id is dirty, then we need to flush the page first
+      Page *victim_page = &pages_[frame_id];
+      if (victim_page->IsDirty()) {
+        if (!this->FlushPage(page_id)) {
+          LOG_ERROR("failed to flush the dirty page");
+          // add back victim page
+          replacer_->RecordAccess(frame_id);
+          return INVALID_FRAME_ID;
+        }
+      }
+    };
+  } else {
+    frame_id = *it;
+    free_list_.pop_front();
+  }
+
+  replacer_->RecordAccess(frame_id);
+  replacer_->SetEvictable(frame_id, false);
+
+  page_table_.emplace(page_id, frame_id);
+
+  return frame_id;
+};
 
 }  // namespace bustub

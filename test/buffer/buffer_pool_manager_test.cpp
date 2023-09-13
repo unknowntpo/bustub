@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "buffer/buffer_pool_manager.h"
+#include "common/logger.h"
 
 #include <cstdio>
 #include <random>
@@ -70,12 +71,24 @@ TEST(BufferPoolManagerTest, BinaryDataTest) {
     EXPECT_EQ(true, bpm->UnpinPage(i, true));
     bpm->FlushPage(i);
   }
+
+  // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  // [o, o, o, o, o, x, x, x, x, x]
   for (int i = 0; i < 5; ++i) {
     EXPECT_NE(nullptr, bpm->NewPage(&page_id_temp));
     bpm->UnpinPage(page_id_temp, false);
   }
+
+  // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  // [x, x, x, x, x, x, x, x, x, x]
+
+  LOG_INFO("we should be able to fetch the dat awe wrote a whilte ago");
   // Scenario: We should be able to fetch the data we wrote a while ago.
   page0 = bpm->FetchPage(0);
+  EXPECT_NE(nullptr, page0);
+
+  LOG_INFO("after fetch page");
+
   EXPECT_EQ(0, memcmp(page0->GetData(), random_binary_data, BUSTUB_PAGE_SIZE));
   EXPECT_EQ(true, bpm->UnpinPage(0, true));
 

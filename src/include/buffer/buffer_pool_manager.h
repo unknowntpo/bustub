@@ -19,6 +19,7 @@
 
 #include "buffer/lru_k_replacer.h"
 #include "common/config.h"
+#include "common/logger.h"
 #include "recovery/log_manager.h"
 #include "storage/disk/disk_manager.h"
 #include "storage/page/page.h"
@@ -209,5 +210,7 @@ class BufferPoolManager {
   }
 
   // TODO(student): You may add additional private members and helper functions
+
+  auto AllocateFrameForPage(page_id_t page_id) -> frame_id_t;
 };
 }  // namespace bustub

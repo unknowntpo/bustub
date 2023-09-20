@@ -26,7 +26,20 @@ namespace bustub {
 
 enum class AccessType { Unknown = 0, Get, Scan };
 
-struct ListNode;
+class ListNode {
+ public:
+  explicit ListNode(size_t frame_id, bool is_evictable, size_t k);
+  auto ExceedK(size_t k) -> bool;
+  auto K() -> size_t;
+  auto IsEvictable() -> bool;
+  auto GetFrameID() -> frame_id_t;
+
+ private:
+  frame_id_t fid_{INVALID_FRAME_ID};
+  bool is_evictable_{false};
+  size_t k_{0};
+};
+
 class MapNode {
   /** History of last seen K timestamps of this page. Least recent timestamp stored in front. */
   // Remove maybe_unused if you start using them. Feel free to change the member variables as you want.
@@ -42,11 +55,6 @@ class MapNode {
   auto K() -> size_t;
 
   ~MapNode() = default;
-};
-
-struct ListNode {
-  frame_id_t fid_;
-  std::unordered_map<frame_id_t, MapNode>::iterator map_node_it_;
 };
 
 /**
@@ -170,7 +178,7 @@ class LRUKReplacer {
   size_t replacer_size_;
   // evictable size
   size_t curr_size_{0};
-  std::unordered_map<frame_id_t, MapNode> node_store_;
+  std::unordered_map<frame_id_t, std::list<ListNode>::iterator> node_store_;
   // push from head, pop from back
   std::list<ListNode> cache_list_;
   std::list<ListNode> hist_list_;

@@ -25,11 +25,12 @@ void LRUKReplacer::Debug() {
   LOG_INFO("capacity=[%ld], size=[%ld]", this->replacer_size_, this->Size());
 
   for (auto it = this->node_store_.begin(); it != this->node_store_.end(); it++) {
-    LOG_INFO("node_store_[%d] = {k_: %ld, is_evictable: %d}", it->first, it->second.k_, it->second.is_evictable_);
+    LOG_INFO("node_store_[frame_id: %d] = {k_: %ld, is_evictable: %d}", it->first, it->second->K(),
+             it->second->IsEvictable());
   }
 
   for (const auto &n : this->hist_list_) {
-    LOG_INFO("hist_list node: {fid_: %d}", n.fid_);
+    LOG_INFO("hist_list node: {fid_: %d}", n->GetFrameID());
   }
 
   LOG_INFO("size hist_list node: %ld", this->hist_list_.size());
@@ -37,7 +38,7 @@ void LRUKReplacer::Debug() {
   LOG_INFO("size cache list : %ld", this->cache_list_.size());
 
   for (auto it = this->cache_list_.begin(); it != this->cache_list_.end(); it++) {
-    LOG_INFO("cache_list node: {fid_: %d}", it->fid_);
+    LOG_INFO("cache_list node: {fid_: %d}", it->GetFrameID());
   }
 }
 
@@ -46,14 +47,12 @@ void LRUKReplacer::Debug() {
 // look for frame_id from map, and delete it from hist_list or cache_list,
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
   // search hist_list, if exist victim, then evict it
+  this->Debug();
   for (auto rit = this->hist_list_.rbegin(); rit != this->hist_list_.rend(); rit++) {
     auto it = --rit.base();
-    ListNode n;
-    auto map_node_it = it->map_node_it_;
-    if (it->map_node_it_->second.is_evictable_) {
-      *frame_id = it->fid_;
+    if (it->IsEvictable()) {
       this->hist_list_.erase(it);
-      this->node_store_.erase(map_node_it);
+      this->node_store_.erase(*frame_id);
       this->curr_size_--;
       return true;
     }
@@ -62,12 +61,9 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
   // if hist_list has no victim, then get victim from cache_list
   for (auto rit = this->cache_list_.rbegin(); rit != this->cache_list_.rend(); rit++) {
     auto it = --rit.base();
-    ListNode n;
-    auto map_node_it = it->map_node_it_;
-    if (it->map_node_it_->second.is_evictable_) {
-      *frame_id = it->fid_;
+    if (it->IsEvictable()) {
       this->cache_list_.erase(it);
-      this->node_store_.erase(map_node_it);
+      this->node_store_.erase(*frame_id);
       this->curr_size_--;
       return true;
     }
@@ -82,13 +78,13 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
 
   auto it = this->node_store_.find(frame_id);
   if (it == this->node_store_.end()) {
-    ListNode list_node = {
-        .fid_ = frame_id,
-    };
+    // FIXME: is new list node evicatble ?
+    auto list_node = ListNode(frame_id, false, this->k_);
+
     this->hist_list_.push_front(list_node);
     MapNode new_node = MapNode(frame_id, this->hist_list_.begin(), false, 1);
     this->node_store_.emplace(frame_id, new_node);
-    this->hist_list_.begin()->map_node_it_ = this->node_store_.find(frame_id);
+    this->hist_list_.push_front(*this->node_store_.find(frame_id)->second);
     return;
   }
 
@@ -140,17 +136,43 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
     LOG_ERROR("in SetEvictable, frame_id: %d does not exist", frame_id);
     return;
   }
-  if (it->second.is_evictable_ == set_evictable) {
+
+  MapNode map_node = it->second;
+  if (map_node.is_evictable_ == set_evictable) {
     // no change
     return;
   }
   if (it->second.is_evictable_ && !set_evictable) {
+    // set evictable == true
+
+    // new
+
+    /* old
     this->curr_size_--;
+    // FIXME: should move from pined list to corresponding list.
+    // e.g. cache_list_ or hist_list_
+    if (it->second.ExceedK(this->k_)) {
+      LOG_INFO("need to move from pinned list to cache list frame_id: %d", frame_id);
+      it->second.k_++;
+      LOG_INFO("frame_id: %d mapnode.k is %ld", frame_id, it->second.k_);
+      auto l_it = it->second.it_;
+      // move from hist list to cache list
+      this->cache_list_.splice(this->cache_list_.begin(), this->pinned_list_, l_it, std::next(l_it));
+      it->second.it_ = this->cache_list_.begin();
+    } else {
+      it->second.k_++;
+      auto l_it = it->second.it_;
+      auto node = *l_it;
+      this->pinned_list_.erase(l_it);
+      this->hist_list_.push_front(node);
+      it->second.it_ = this->hist_list_.begin();
+      */
   }
-  if (!it->second.is_evictable_ && set_evictable) {
-    this->curr_size_++;
-  }
-  it->second.is_evictable_ = set_evictable;
+}
+if (!it->second.is_evictable_ && set_evictable) {
+  this->curr_size_++;
+}
+it->second.is_evictable_ = set_evictable;
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) { LOG_INFO("Remove frame_id: %d", frame_id); }
@@ -160,20 +182,13 @@ auto LRUKReplacer::Size() -> size_t {
   return this->curr_size_;
 }
 
-/*
-MapNode::MapNode(size_t frame_id, std::list<ListNode>::iterator it, bool is_evictable, size_t k)
-    : fid_(frame_id), it_(it), is_evictable_(is_evictable), k_(k){};
-    */
-
-MapNode::MapNode(size_t frame_id, std::list<ListNode>::iterator it, bool is_evictable, size_t k) {
+ListNode::ListNode(frame_id_t frame_id, bool is_evictable, size_t k) {
   fid_ = frame_id;
-  it_ = it;
   is_evictable_ = is_evictable;
   k_ = k;
 }
-
-bool MapNode::ExceedK(size_t k) { return this->k_ >= k; }
-size_t MapNode::K() { return this->k_; }
+ListNode::IsEvictable()->bool { return this->is_evictable_; }
+ListNode::GetFrameID()->frame_id_t { return this->fid_; }
 
 // MapNode::MapNode(size_t frame_id) : fid_(frame_id) {}
 

@@ -59,7 +59,7 @@ BufferPoolManager::~BufferPoolManager() { delete[] pages_; }
  */
 auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
   LOG_INFO("NewPage is called");
-  const std::lock_guard<std::mutex> lock(latch_);
+  const std::lock_guard<std::recursive_mutex> lock(latch_);
 
   Page *page;
   *page_id = this->AllocatePage();
@@ -101,7 +101,7 @@ auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
 auto BufferPoolManager::FetchPage(page_id_t page_id, [[maybe_unused]] AccessType access_type) -> Page * {
   LOG_INFO("FetchPage is called for page %d", page_id);
 
-  const std::lock_guard<std::mutex> lock(latch_);
+  const std::lock_guard<std::recursive_mutex> lock(latch_);
 
   frame_id_t frame_id;
   Page *page;
@@ -143,7 +143,7 @@ auto BufferPoolManager::FetchPage(page_id_t page_id, [[maybe_unused]] AccessType
  */
 auto BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty, [[maybe_unused]] AccessType access_type) -> bool {
   LOG_INFO("UnpinPage is called for page %d", page_id);
-  const std::lock_guard<std::mutex> lock(latch_);
+  const std::lock_guard<std::recursive_mutex> lock(latch_);
 
   // return false;
   auto it = page_table_.find(page_id);
@@ -155,13 +155,14 @@ auto BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty, [[maybe_unus
   // found target page, now unpin it.
   frame_id_t frame_id = it->second;
   Page *page = &pages_[frame_id];
-  LOG_INFO("pin_count_: %d", page->GetPinCount());
 
   if (page->pin_count_ <= 0) return false;
   page->pin_count_--;
   if (page->pin_count_ == 0) {
     replacer_->SetEvictable(frame_id, true);
   }
+  LOG_INFO("after unpin, pin_count_: %d", page->GetPinCount());
+
   page->is_dirty_ = is_dirty;
   return true;
 }
@@ -179,12 +180,13 @@ auto BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty, [[maybe_unus
  */
 auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
   std::cout << "FlushPage is called for page_id " << page_id << std::endl;
-  const std::lock_guard<std::mutex> lock(latch_);
+  const std::lock_guard<std::recursive_mutex> lock(latch_);
 
   if (page_id == INVALID_PAGE_ID) return false;
   auto it = page_table_.find(page_id);
   if (it == page_table_.end()) {
     // not found
+    LOG_ERROR("dirty page_id %d not found", page_id);
     return false;
   }
   frame_id_t frame_id = it->second;
@@ -250,9 +252,13 @@ auto BufferPoolManager::AllocateFrameForPage(page_id_t page_id) -> frame_id_t {
       return INVALID_FRAME_ID;
     } else {
       // if frame_id is dirty, then we need to flush the page first
+      LOG_INFO("victim frame: %d", frame_id);
+
       Page *victim_page = &pages_[frame_id];
+      LOG_INFO("victim page: %d", victim_page->GetPageId());
+
       if (victim_page->IsDirty()) {
-        if (!this->FlushPage(page_id)) {
+        if (!this->FlushPage(victim_page->GetPageId())) {
           LOG_ERROR("failed to flush the dirty page");
           // add back victim page
           replacer_->RecordAccess(frame_id);
